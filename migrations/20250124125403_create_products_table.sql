@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS products (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    price REAL NOT NULL,
+    barcode TEXT NOT NULL,
+    scanned_at DATE DEFAULT CURRENT_DATE
+)
