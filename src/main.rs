@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/healthcheck", get(healthcheck))
         .route("/products", get(list_products))
         .route("/products", post(add_product))
+        .route("/stores", post(add_store))
         .layer(CorsLayer::permissive()) // Enable CORS for development
         .layer(TraceLayer::new_for_http())
         .with_state(db);
@@ -112,4 +113,25 @@ async fn list_products(State(db): State<PgPool>) -> Result<Json<Vec<ProductRecor
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Store {
+    name: String,
+    latitude: f32,
+    longitude: f32,
+}
+
+#[derive(Serialize)]
+struct StoreResponse {
+    id: String,
+}
+
+#[instrument]
+async fn add_store(Json(store): Json<Store>) -> Result<Json<StoreResponse>, StatusCode> {
+    tracing::info!("{:?}", store);
+    dbg!(store);
+    Ok(Json(StoreResponse {
+        id: "1234".to_string(),
+    }))
 }
