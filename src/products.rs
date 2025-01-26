@@ -23,27 +23,22 @@ pub struct ProductRecord {
     scanned_at: Option<NaiveDate>,
 }
 
-// Handler for POST /products
 #[instrument(skip(db))]
-pub async fn add_product(
-    State(db): State<PgPool>,
-    Json(product): Json<Product>,
-) -> Result<StatusCode, ApiError> {
+async fn insert_product(db: &PgPool, product: &Product) -> Result<(), ApiError> {
     sqlx::query!(
         r#"INSERT INTO products (name, price, barcode) VALUES ($1, $2, $3)"#,
         product.name,
         product.price,
         product.barcode
     )
-    .execute(&db)
+    .execute(db)
     .await?;
-    Ok(StatusCode::CREATED)
+    Ok(())
 }
 
-// Handler for GET /products
 #[instrument(skip(db))]
-pub async fn list_products(State(db): State<PgPool>) -> Result<Json<Vec<ProductRecord>>, ApiError> {
-    let products = sqlx::query_as!(
+async fn fetch_all_products(db: &PgPool) -> Result<Vec<ProductRecord>, ApiError> {
+    sqlx::query_as!(
         ProductRecord,
         r#"
          SELECT id, name, price, barcode, scanned_at
@@ -51,7 +46,22 @@ pub async fn list_products(State(db): State<PgPool>) -> Result<Json<Vec<ProductR
          ORDER BY scanned_at DESC
          "#,
     )
-    .fetch_all(&db)
-    .await?;
+    .fetch_all(db)
+    .await
+    .map_err(Into::into)
+}
+
+#[instrument(skip(db))]
+pub async fn add_product(
+    State(db): State<PgPool>,
+    Json(product): Json<Product>,
+) -> Result<StatusCode, ApiError> {
+    insert_product(&db, &product).await?;
+    Ok(StatusCode::CREATED)
+}
+
+#[instrument(skip(db))]
+pub async fn list_products(State(db): State<PgPool>) -> Result<Json<Vec<ProductRecord>>, ApiError> {
+    let products = fetch_all_products(&db).await?;
     Ok(Json(products))
 }
