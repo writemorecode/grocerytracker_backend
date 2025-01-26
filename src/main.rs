@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/products", get(list_products))
         .route("/products", post(add_product))
         .route("/stores", post(add_store))
+        .route("/stores", get(list_stores))
         .layer(CorsLayer::permissive()) // Enable CORS for development
         .layer(TraceLayer::new_for_http())
         .with_state(db);
@@ -115,23 +116,91 @@ async fn list_products(State(db): State<PgPool>) -> Result<Json<Vec<ProductRecor
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
 struct Store {
     name: String,
-    latitude: f32,
-    longitude: f32,
+    street_number: i32,
+    street_name: String,
+    city: String,
+    country_code: String,
+    latitude: f64,
+    longitude: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+struct StoreRecord {
+    id: i64,
+    name: String,
+    street_number: i32,
+    street_name: String,
+    city: String,
+    country_code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct StoreResponse {
-    id: String,
+    id: i64,
 }
 
-#[instrument]
-async fn add_store(Json(store): Json<Store>) -> Result<Json<StoreResponse>, StatusCode> {
-    tracing::info!("{:?}", store);
-    dbg!(store);
-    Ok(Json(StoreResponse {
-        id: "1234".to_string(),
-    }))
+#[instrument(skip(db))]
+async fn add_store(
+    State(db): State<PgPool>,
+    Json(store): Json<Store>,
+) -> Result<Json<StoreResponse>, StatusCode> {
+    let record = sqlx::query_as!(
+        StoreResponse,
+        r#"
+        INSERT INTO stores (name, street_number, street_name, city, country_code, coordinate)
+        VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            ST_SetSRID(ST_MakePoint($6, $7), 4326)
+        )
+        ON CONFLICT (street_number, street_name, city, country_code) 
+        DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+        "#,
+        store.name,
+        store.street_number,
+        store.street_name,
+        store.city,
+        store.country_code,
+        store.longitude,
+        store.latitude,
+    )
+    .fetch_one(&db)
+    .await;
+
+    match record {
+        Ok(store) => Ok(Json(store)),
+        Err(err) => {
+            tracing::error!("{}", err.to_string());
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[instrument(skip(db))]
+async fn list_stores(State(db): State<PgPool>) -> Result<Json<Vec<StoreRecord>>, StatusCode> {
+    let stores = sqlx::query_as!(
+        StoreRecord,
+        r#"
+        SELECT id, name, street_number, street_name, city, country_code
+        FROM stores
+        ORDER BY name ASC
+        "#,
+    )
+    .fetch_all(&db)
+    .await;
+
+    match stores {
+        Ok(stores) => Ok(Json(stores)),
+        Err(err) => {
+            tracing::error!("{}", err.to_string());
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
