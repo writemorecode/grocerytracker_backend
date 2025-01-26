@@ -169,3 +169,18 @@ async fn add_store(
         Ok(Json(store_id))
     }
 }
+
+#[instrument(skip(db))]
+async fn list_stores(State(db): State<PgPool>) -> Result<Json<Vec<StoreRecord>>, ApiError> {
+    let stores = sqlx::query_as!(
+        StoreRecord,
+        r#"
+        SELECT id, name, street_number, street_name, city, country_code
+        FROM stores
+        ORDER BY name ASC
+        "#,
+    )
+    .fetch_all(&db)
+    .await?;
+    Ok(Json(stores))
+}
