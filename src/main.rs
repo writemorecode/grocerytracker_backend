@@ -1,8 +1,6 @@
 use axum::{
     extract::State,
     http::StatusCode,
-    response::IntoResponse,
-    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -14,25 +12,8 @@ use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::instrument;
 use tracing_subscriber::EnvFilter;
-
-enum ApiError {
-    DatabaseError(sqlx::Error),
-}
-impl From<sqlx::Error> for ApiError {
-    fn from(err: sqlx::Error) -> Self {
-        ApiError::DatabaseError(err)
-    }
-}
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        match self {
-            ApiError::DatabaseError(err) => {
-                tracing::error!("{}", err.to_string());
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
-            }
-        }
-    }
-}
+mod error;
+use crate::error::ApiError;
 
 // Product data structure matching iOS app
 #[derive(Debug, Serialize, Deserialize)]
