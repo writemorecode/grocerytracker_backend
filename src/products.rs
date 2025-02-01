@@ -1,35 +1,64 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::PgPool;
 use tracing::instrument;
 
 use crate::error::ApiError;
-// Product data structure matching iOS app
+use crate::types::Id;
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Product {
-    name: String,
-    price: f32,
-    barcode: String,
+pub struct PriceLookupRequest {
+    pub name: String,
+    pub barcode: String,
+    pub price: f32,
+    pub store_id: Id,
 }
 
-// Database record with timestamp
-#[derive(Serialize, Deserialize, FromRow)]
-pub struct ProductRecord {
-    id: i64,
-    name: String,
-    price: f32,
-    barcode: String,
-    scanned_at: Option<NaiveDate>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecentPrice {
+    pub price: f32,
+    pub date: Option<NaiveDate>,
 }
 
 #[instrument(skip(db))]
-async fn insert_product(db: &PgPool, product: &Product) -> Result<(), ApiError> {
+pub async fn find_or_create_product(
+    db: &PgPool,
+    name: &str,
+    barcode: &str,
+) -> Result<Id, ApiError> {
+    let existing = sqlx::query!("SELECT id FROM products WHERE barcode = $1", barcode)
+        .fetch_optional(db)
+        .await?;
+
+    match existing {
+        Some(record) => Ok(record.id),
+        None => {
+            let record = sqlx::query!(
+                "INSERT INTO products (name, barcode) VALUES ($1, $2) RETURNING id",
+                name,
+                barcode
+            )
+            .fetch_one(db)
+            .await?;
+            Ok(record.id)
+        }
+    }
+}
+
+pub async fn insert_price(
+    db: &PgPool,
+    product_id: Id,
+    store_id: Id,
+    price: f32,
+) -> Result<(), ApiError> {
     sqlx::query!(
-        r#"INSERT INTO products (name, price, barcode) VALUES ($1, $2, $3)"#,
-        product.name,
-        product.price,
-        product.barcode
+        "INSERT INTO prices (product_id, store_id, price, date) 
+        VALUES ($1, $2, $3, CURRENT_DATE)
+        ON CONFLICT ON CONSTRAINT unique_price_per_day DO NOTHING",
+        product_id,
+        store_id,
+        price
     )
     .execute(db)
     .await?;
@@ -37,31 +66,32 @@ async fn insert_product(db: &PgPool, product: &Product) -> Result<(), ApiError> 
 }
 
 #[instrument(skip(db))]
-async fn fetch_all_products(db: &PgPool) -> Result<Vec<ProductRecord>, ApiError> {
-    sqlx::query_as!(
-        ProductRecord,
-        r#"
-         SELECT id, name, price, barcode, scanned_at
-         FROM products
-         ORDER BY scanned_at DESC
-         "#,
+pub async fn get_recent_prices(
+    db: &PgPool,
+    product_id: Id,
+    store_id: Id,
+) -> Result<Vec<RecentPrice>, ApiError> {
+    let prices = sqlx::query_as!(
+        RecentPrice,
+        "SELECT price, date FROM prices 
+        WHERE product_id = $1 AND store_id = $2 
+        ORDER BY date DESC 
+        LIMIT 10",
+        product_id,
+        store_id
     )
     .fetch_all(db)
-    .await
-    .map_err(Into::into)
+    .await?;
+    Ok(prices)
 }
 
 #[instrument(skip(db))]
-pub async fn add_product(
+pub async fn lookup_price(
     State(db): State<PgPool>,
-    Json(product): Json<Product>,
-) -> Result<StatusCode, ApiError> {
-    insert_product(&db, &product).await?;
-    Ok(StatusCode::CREATED)
-}
-
-#[instrument(skip(db))]
-pub async fn list_products(State(db): State<PgPool>) -> Result<Json<Vec<ProductRecord>>, ApiError> {
-    let products = fetch_all_products(&db).await?;
-    Ok(Json(products))
+    Json(request): Json<PriceLookupRequest>,
+) -> Result<Json<Vec<RecentPrice>>, ApiError> {
+    let product_id = find_or_create_product(&db, &request.name, &request.barcode).await?;
+    insert_price(&db, product_id, request.store_id, request.price).await?;
+    let prices = get_recent_prices(&db, product_id, request.store_id).await?;
+    Ok(Json(prices))
 }

@@ -10,12 +10,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::instrument;
 use tracing_subscriber::EnvFilter;
 
-mod error;
-mod products;
-mod stores;
-
-use crate::products::{add_product, list_products};
-use crate::stores::{add_store, list_stores};
+use backend_grocerytracker::{products::lookup_price, stores::add_store};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,10 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create API router
     let app = Router::new()
         .route("/healthcheck", get(healthcheck))
-        .route("/products", get(list_products))
-        .route("/products", post(add_product))
         .route("/stores", post(add_store))
-        .route("/stores", get(list_stores))
+        .route("/prices", post(lookup_price))
         .layer(CorsLayer::permissive()) // Enable CORS for development
         .layer(TraceLayer::new_for_http())
         .with_state(db);

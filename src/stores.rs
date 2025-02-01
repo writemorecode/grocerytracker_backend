@@ -4,31 +4,32 @@ use sqlx::{FromRow, PgPool};
 use tracing::instrument;
 
 use crate::error::ApiError;
+use crate::types::Id;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Store {
     name: String,
-    street_number: i32,
-    street_name: String,
-    city: String,
-    country_code: String,
+    street_number: Option<i32>,
+    street_name: Option<String>,
+    city: Option<String>,
+    country_code: Option<String>,
     latitude: f64,
     longitude: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct StoreRecord {
-    id: i64,
-    name: String,
-    street_number: i32,
-    street_name: String,
-    city: String,
-    country_code: String,
+    id: Id,
+    name: Option<String>,
+    street_number: Option<Id>,
+    street_name: Option<String>,
+    city: Option<String>,
+    country_code: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoreResponse {
-    id: i64,
+    id: Id,
 }
 
 #[instrument(skip(db))]
@@ -38,7 +39,12 @@ async fn find_store_by_address(
 ) -> Result<Option<StoreResponse>, ApiError> {
     let store_id = sqlx::query_as!(
         StoreResponse,
-        "SELECT id FROM stores WHERE street_number = $1 AND street_name = $2 AND city = $3 AND country_code = $4",
+        "SELECT id FROM stores
+        WHERE
+        street_number = $1 AND
+        street_name = $2 AND
+        city = $3 AND
+        country_code = $4",
         store.street_number,
         store.street_name,
         store.city,

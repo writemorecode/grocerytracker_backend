@@ -1,1 +1,0 @@
-ALTER TABLE stores DROP CONSTRAINT unique_store_location;
