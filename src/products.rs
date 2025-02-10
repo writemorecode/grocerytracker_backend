@@ -20,6 +20,8 @@ pub struct PriceLookupRequest {
 pub struct RecentPrice {
     pub price: f32,
     pub date: Option<NaiveDate>,
+    pub store_name: Option<String>,
+    pub distance: Option<f64>,
 }
 
 #[instrument(skip(db))]
@@ -69,17 +71,54 @@ pub async fn insert_price(
 #[instrument(skip(db))]
 pub async fn get_recent_prices(
     db: &PgPool,
-    product_id: Id,
     store_id: Id,
+    barcode: String,
 ) -> Result<Vec<RecentPrice>, ApiError> {
+    struct LatLon {
+        latitude: Option<f64>,
+        longitude: Option<f64>,
+    }
+
+    let store_coord = sqlx::query_as!(
+        LatLon,
+        "SELECT 
+            ST_X(coordinate::geometry) as latitude,
+            ST_Y(coordinate::geometry) as longitude
+        FROM stores WHERE id = $1",
+        store_id
+    )
+    .fetch_one(db)
+    .await?;
+
     let prices = sqlx::query_as!(
         RecentPrice,
-        "SELECT price, date FROM prices 
-        WHERE product_id = $1 AND store_id = $2 
-        ORDER BY date DESC 
-        LIMIT 10",
-        product_id,
-        store_id
+        "SELECT
+            date,
+            p.price,
+            s.name as store_name,
+            ST_Distance(
+                s.coordinate, 
+                ST_SetSRID(ST_Point($1, $2), 4326)
+            ) as distance
+        FROM
+            prices AS p
+        JOIN
+            stores AS s ON p.store_id = s.id
+        JOIN
+            products AS pr ON p.product_id = pr.id
+        WHERE
+            pr.barcode = $4
+            AND ST_Distance(
+                s.coordinate, 
+                ST_SetSRID(ST_Point($1, $2), 4326)
+            ) <= 1000
+            AND s.id != $3
+        ORDER BY
+            price ASC, date DESC",
+        store_coord.latitude,
+        store_coord.longitude,
+        store_id,
+        barcode
     )
     .fetch_all(db)
     .await?;
@@ -93,6 +132,6 @@ pub async fn lookup_price(
 ) -> Result<Json<Vec<RecentPrice>>, ApiError> {
     let product_id = find_or_create_product(&db, &request.name, &request.barcode).await?;
     insert_price(&db, product_id, request.store_id, request.price).await?;
-    let prices = get_recent_prices(&db, product_id, request.store_id).await?;
+    let prices = get_recent_prices(&db, request.store_id, request.barcode).await?;
     Ok(Json(prices))
 }
