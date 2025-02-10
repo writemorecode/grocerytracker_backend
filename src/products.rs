@@ -12,6 +12,7 @@ pub struct PriceLookupRequest {
     pub name: String,
     pub barcode: String,
     pub price: f32,
+    #[serde(rename = "storeID")]
     pub store_id: Id,
 }
 
