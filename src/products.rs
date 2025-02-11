@@ -12,8 +12,12 @@ pub struct PriceLookupRequest {
     pub name: String,
     pub barcode: String,
     pub price: f32,
+
     #[serde(rename = "storeID")]
     pub store_id: Id,
+
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,25 +75,8 @@ pub async fn insert_price(
 #[instrument(skip(db))]
 pub async fn get_recent_prices(
     db: &PgPool,
-    store_id: Id,
-    barcode: String,
+    request: PriceLookupRequest,
 ) -> Result<Vec<RecentPrice>, ApiError> {
-    struct LatLon {
-        latitude: Option<f64>,
-        longitude: Option<f64>,
-    }
-
-    let store_coord = sqlx::query_as!(
-        LatLon,
-        "SELECT 
-            ST_X(coordinate::geometry) as latitude,
-            ST_Y(coordinate::geometry) as longitude
-        FROM stores WHERE id = $1",
-        store_id
-    )
-    .fetch_one(db)
-    .await?;
-
     let prices = sqlx::query_as!(
         RecentPrice,
         "SELECT
@@ -115,10 +102,10 @@ pub async fn get_recent_prices(
             AND s.id != $3
         ORDER BY
             price ASC, date DESC",
-        store_coord.latitude,
-        store_coord.longitude,
-        store_id,
-        barcode
+        request.latitude,
+        request.longitude,
+        request.store_id,
+        request.barcode,
     )
     .fetch_all(db)
     .await?;
@@ -132,6 +119,6 @@ pub async fn lookup_price(
 ) -> Result<Json<Vec<RecentPrice>>, ApiError> {
     let product_id = find_or_create_product(&db, &request.name, &request.barcode).await?;
     insert_price(&db, product_id, request.store_id, request.price).await?;
-    let prices = get_recent_prices(&db, request.store_id, request.barcode).await?;
+    let prices = get_recent_prices(&db, request).await?;
     Ok(Json(prices))
 }
