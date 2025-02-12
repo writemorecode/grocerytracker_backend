@@ -21,8 +21,11 @@ pub struct PriceLookupRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecentPrice {
     pub price: f32,
+    pub absolute_price_change: Option<f32>,
+    pub relative_price_change: Option<f32>,
     pub date: Option<NaiveDate>,
     pub store_name: Option<String>,
     pub distance: Option<f64>,
@@ -82,6 +85,8 @@ pub async fn get_recent_prices(
         "SELECT
             date,
             p.price,
+            ($5 - p.price) AS absolute_price_change,
+            (($5 - p.price) / p.price) AS relative_price_change,
             s.name as store_name,
             ST_Distance(
                 s.coordinate, 
@@ -106,6 +111,7 @@ pub async fn get_recent_prices(
         request.longitude,
         request.store_id,
         request.barcode,
+        request.price,
     )
     .fetch_all(db)
     .await?;
