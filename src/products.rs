@@ -23,13 +23,18 @@ pub struct PriceLookupRequest {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentPrice {
-    pub name: String,
     pub price: f32,
     pub absolute_price_change: Option<f32>,
     pub relative_price_change: Option<f32>,
     pub date: Option<NaiveDate>,
     pub store_name: Option<String>,
     pub distance: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PriceLookupResponse {
+    pub name: String,
+    pub prices: Vec<RecentPrice>,
 }
 
 #[instrument(skip(db))]
@@ -79,12 +84,11 @@ pub async fn insert_price(
 #[instrument(skip(db))]
 pub async fn get_recent_prices(
     db: &PgPool,
-    request: PriceLookupRequest,
+    request: &PriceLookupRequest,
 ) -> Result<Vec<RecentPrice>, ApiError> {
     let prices = sqlx::query_as!(
         RecentPrice,
         "SELECT
-            pr.name,
             date,
             p.price,
             (p.price - $5) AS absolute_price_change,
@@ -124,9 +128,13 @@ pub async fn get_recent_prices(
 pub async fn lookup_price(
     State(db): State<PgPool>,
     Json(request): Json<PriceLookupRequest>,
-) -> Result<Json<Vec<RecentPrice>>, ApiError> {
+) -> Result<Json<PriceLookupResponse>, ApiError> {
     let product_id = find_or_create_product(&db, &request.name, &request.barcode).await?;
     insert_price(&db, product_id, request.store_id, request.price).await?;
-    let prices = get_recent_prices(&db, request).await?;
-    Ok(Json(prices))
+    let prices = get_recent_prices(&db, &request).await?;
+    let response = PriceLookupResponse {
+        name: request.name,
+        prices,
+    };
+    Ok(Json(response))
 }
