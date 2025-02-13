@@ -84,10 +84,11 @@ pub async fn get_recent_prices(
     let prices = sqlx::query_as!(
         RecentPrice,
         "SELECT
+            pr.name,
             date,
             p.price,
-            ($5 - p.price) AS absolute_price_change,
-            (($5 - p.price) / p.price) AS relative_price_change,
+            (p.price - $5) AS absolute_price_change,
+            ((p.price - $5) / p.price) AS relative_price_change,
             s.name as store_name,
             ST_Distance(
                 s.coordinate, 
