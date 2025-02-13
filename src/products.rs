@@ -23,6 +23,7 @@ pub struct PriceLookupRequest {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentPrice {
+    pub name: String,
     pub price: f32,
     pub absolute_price_change: Option<f32>,
     pub relative_price_change: Option<f32>,
